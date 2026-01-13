@@ -113,32 +113,49 @@ func main() {
 
 			// 4. Pole Numeru
 			chromedp.KeyEvent(kb.Tab),
-			randomSleep(0.8, 1.5),
+			randomSleep(0.6, 1.2),
 			chromedp.KeyEvent(kw.Numer),
 
 			// 5. Pole Cyfry
-			randomSleep(0.8, 1.5),
+			randomSleep(0.6, 1.2),
 			chromedp.KeyEvent(kb.Tab),
-			randomSleep(0.8, 1.5),
+			randomSleep(0.6, 1.2),
 			chromedp.KeyEvent(kw.CyfraKontrolna),
 
-			// 6. Kliknij Wyszukaj
+			// naciśnij tab, żeby przejść do przycisku Szukaj
+			randomSleep(0.6, 1.2),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.6, 1.2),
+			// nacisnij enter, zeby kliknąć Szukaj
+			chromedp.KeyEvent(kb.Enter),
+			//przejdz do "przeglądanie aktualnej treści KW"
 			randomSleep(1.0, 2.0),
-			chromedp.Click(`#wyszukaj`, chromedp.ByID),
+			
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.05, 0.1),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.05, 0.1),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.05, 0.1),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.05, 0.1),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.05, 0.1),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.05, 0.1),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.05, 0.1),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.8, 1.5),
+			chromedp.KeyEvent(kb.Tab),
 
-			// Czekamy na wynik
+
+			//kliknij enter
+			randomSleep(0.8, 1.5),
+			chromedp.KeyEvent(kb.Enter),
+			// 6. Czekamy na wyniki
+			chromedp.WaitVisible(`#wynikSearchKW`, chromedp.ByID),
 			randomSleep(2.0, 4.0),
-
-			// 7. Przejście do wyniku
-			chromedp.WaitVisible(`input[value="Przeglądanie aktualnej treści KW"]`, chromedp.ByQuery),
-			randomSleep(1.0, 2.0),
-			chromedp.Click(`input[value="Przeglądanie aktualnej treści KW"]`, chromedp.ByQuery),
-
-			// 8. Wejście w Dział I-O
-			randomSleep(2.0, 4.0),
-			chromedp.WaitVisible(`//a[contains(text(), "Dział I-O")]`, chromedp.BySearch),
-			randomSleep(1.0, 2.0),
-			chromedp.Click(`//a[contains(text(), "Dział I-O")]`, chromedp.BySearch),
 
 			// 9. Pobranie danych
 			chromedp.WaitVisible(`#contentDzialu`, chromedp.ByID),
