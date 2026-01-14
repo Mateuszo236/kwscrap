@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"strings"
 	"time"
 
@@ -13,14 +14,15 @@ import (
 	"github.com/chromedp/chromedp/kb"
 )
 
+// Ksiega represents a property registry record
 type Ksiega struct {
-	KodSadu        string
-	Numer          string
-	CyfraKontrolna string
-	OczekiwaneID   string
+	KodSadu        string // Court code
+	Numer          string // Registry number
+	CyfraKontrolna string // Control digit
 }
 
-// Funkcja losująca czas oczekiwania (dla ludzkiego zachowania)
+// randomSleep returns a chromedp action that sleeps for a random duration between min and max seconds
+// This simulates human-like behavior to avoid detection
 func randomSleep(min, max float64) chromedp.Action {
 	return chromedp.ActionFunc(func(context.Context) error {
 		duration := min + rand.Float64()*(max-min)
@@ -30,29 +32,28 @@ func randomSleep(min, max float64) chromedp.Action {
 }
 
 func main() {
-	// Inicjalizacja losowości
 	rand.Seed(time.Now().UnixNano())
 
-	mojeKsiegi := []Ksiega{
+	/*mojeKsiegi := []Ksiega{
 		{"OL1O", "00140441", "9", "10/1"},
-	}
+	}*/
 
-	// --- POPRAWIONA KONFIGURACJA (Bezpieczne flagi) ---
+	// Konfiguracja ChromeDP z ukryciem automatyzacji
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", false),
 		chromedp.Flag("start-maximized", true),
 
-		// 1. Ukrywamy flagi automatyzacji (wersja uproszczona, która nie powoduje błędu)
+		// Masking automation detection
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		chromedp.Flag("excludeSwitches", "enable-automation"), // Tutaj była zmiana z []string na string
+		chromedp.Flag("excludeSwitches", "enable-automation"),
 		chromedp.Flag("use-mock-keychain", false),
 
-		// 2. Ustawiamy język polski
+		// Polish language and user agent for realistic requests
 		chromedp.Flag("lang", "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7"),
-
-		// 3. User-Agent
 		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 	)
+
+	fmt.Println("Starting scraping...")
 
 	allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	defer cancel()
@@ -60,127 +61,151 @@ func main() {
 	ctx, cancel := chromedp.NewContext(allocCtx)
 	defer cancel()
 
-	// --- MAGIA: Usuwamy ślad robota w JS ---
-	// To musi być wykonane ZANIM załaduje się strona
+	// Inject script to hide webdriver property before page load
 	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(c context.Context) error {
 		_, err := page.AddScriptToEvaluateOnNewDocument(`
 			Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 		`).Do(c)
 		return err
 	})); err != nil {
-		log.Fatal("Błąd przy ukrywaniu webdrivera:", err)
+		log.Fatal("Failed to hide webdriver:", err)
 	}
 
-	// Timeout
+	// Set timeout for long-running operations
 	ctx, cancel = context.WithTimeout(ctx, 300*time.Second)
 	defer cancel()
 
-	fmt.Println("Startuję w trybie STEALTH (Pełne udawanie człowieka)...")
+	fmt.Println("Starting in stealth mode...")
 
-	for i, kw := range mojeKsiegi {
-		fmt.Printf("\n[%d/%d] Sprawdzam: %s/%s/%s\n", i+1, len(mojeKsiegi), kw.KodSadu, kw.Numer, kw.CyfraKontrolna)
+	// Iterate through generated registry numbers
+	licznik := 0
+	for start := 104; start <= 140450; start++ {
+		numerFormatted := fmt.Sprintf("%08d", start)
+		cyfraKontrolna, err := ObliczCyfreKontrolna("OL1O", numerFormatted)
+		if err != nil {
+			log.Printf("Error calculating control digit: %v", err)
+			continue
+		}
+
+		kw := Ksiega{
+			KodSadu:        "OL1O",
+			Numer:          numerFormatted,
+			CyfraKontrolna: cyfraKontrolna,
+		}
+
+		licznik++
+		fmt.Printf("[%d/%d] Processing: %s/%s/%s\n", licznik, 140450-104, kw.KodSadu, kw.Numer, kw.CyfraKontrolna)
 		var htmlContent string
+		var searchResultsHTML string
 
-		err := chromedp.Run(ctx,
-			// 0. Wejście na stronę
+		err = chromedp.Run(ctx,
+			// Navigate to the registry search page
 			chromedp.Navigate(`https://przegladarka-ekw.ms.gov.pl/eukw_prz/KsiegiWieczyste/wyszukiwanieKW`),
 
-			// Jeśli IP jest zbanowane, tu może pojawić się błąd lub strona błędu
+			// Wait for search form to load
 			chromedp.WaitVisible(`#kodWydzialuInput`, chromedp.ByID),
-			randomSleep(1.5, 3.0),
+			randomSleep(0.3, 0.7),
 
 			// 1. Pole Sądu
 			chromedp.Click(`#kodWydzialuInput`, chromedp.ByID),
-			randomSleep(0.5, 1.0),
+			randomSleep(0.2, 0.4),
 
 			// Czyścimy pole
 			chromedp.KeyEvent(kb.Control+"a"),
 			chromedp.KeyEvent(kb.Backspace),
 
 			chromedp.SendKeys(`#kodWydzialuInput`, kw.KodSadu, chromedp.ByID),
-			randomSleep(1.5, 2.5),
+			randomSleep(0.3, 0.7),
 
 			chromedp.KeyEvent(kb.ArrowDown),
-			randomSleep(0.5, 1.0),
+			randomSleep(0.2, 0.4),
 			chromedp.KeyEvent(kb.Enter),
 
 			// 2. Czekamy na AJAX
-			randomSleep(4.0, 6.0),
+			randomSleep(1.0, 2.0),
 
 			// 3. Reset Focusa
 			chromedp.Click(`#kodWydzialuInput`, chromedp.ByID),
-			randomSleep(0.8, 1.5),
+			randomSleep(0.3, 0.6),
 
 			// 4. Pole Numeru
 			chromedp.KeyEvent(kb.Tab),
-			randomSleep(0.6, 1.2),
+			randomSleep(0.2, 0.4),
 			chromedp.KeyEvent(kw.Numer),
 
-			// 5. Pole Cyfry
-			randomSleep(0.6, 1.2),
+			// Fill in control digit
+			randomSleep(0.2, 0.4),
 			chromedp.KeyEvent(kb.Tab),
-			randomSleep(0.6, 1.2),
+			randomSleep(0.2, 0.4),
 			chromedp.KeyEvent(kw.CyfraKontrolna),
 
-			// naciśnij tab, żeby przejść do przycisku Szukaj
-			randomSleep(0.6, 1.2),
-			chromedp.KeyEvent(kb.Tab),
-			randomSleep(0.6, 1.2),
-			// nacisnij enter, zeby kliknąć Szukaj
+			// Tab to search button and submit
 			chromedp.KeyEvent(kb.Enter),
-			//przejdz do "przeglądanie aktualnej treści KW"
+
+			// Wait for search results to load
+			randomSleep(0.3, 0.6),
+
+			// Check if registry exists; abort if not found
+			chromedp.Evaluate(`document.documentElement.outerHTML`, &searchResultsHTML),
+			chromedp.ActionFunc(func(c context.Context) error {
+				if strings.Contains(searchResultsHTML, "nie została odnaleziona") {
+					fmt.Printf("Registry %s/%s/%s not found, skipping.\n", kw.KodSadu, kw.Numer, kw.CyfraKontrolna)
+					return fmt.Errorf("not found")
+				}
+				return nil
+			}),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.01, 0.03),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.01, 0.03),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.01, 0.03),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.01, 0.03),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.01, 0.03),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.01, 0.03),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.01, 0.03),
+			chromedp.KeyEvent(kb.Tab),
+			randomSleep(0.2, 0.4),
+			chromedp.KeyEvent(kb.Tab),
+
+			// Open registry details page
 			randomSleep(1.0, 2.0),
-			
-			chromedp.KeyEvent(kb.Tab),
-			randomSleep(0.05, 0.1),
-			chromedp.KeyEvent(kb.Tab),
-			randomSleep(0.05, 0.1),
-			chromedp.KeyEvent(kb.Tab),
-			randomSleep(0.05, 0.1),
-			chromedp.KeyEvent(kb.Tab),
-			randomSleep(0.05, 0.1),
-			chromedp.KeyEvent(kb.Tab),
-			randomSleep(0.05, 0.1),
-			chromedp.KeyEvent(kb.Tab),
-			randomSleep(0.05, 0.1),
-			chromedp.KeyEvent(kb.Tab),
-			randomSleep(0.05, 0.1),
-			chromedp.KeyEvent(kb.Tab),
-			randomSleep(0.8, 1.5),
-			chromedp.KeyEvent(kb.Tab),
-
-
-			//kliknij enter
-			randomSleep(0.8, 1.5),
 			chromedp.KeyEvent(kb.Enter),
-			// 6. Czekamy na wyniki
-			chromedp.WaitVisible(`#wynikSearchKW`, chromedp.ByID),
-			randomSleep(2.0, 4.0),
 
-			// 9. Pobranie danych
-			chromedp.WaitVisible(`#contentDzialu`, chromedp.ByID),
-			randomSleep(1.0, 2.0),
-			chromedp.OuterHTML(`body`, &htmlContent),
+			// Wait for page load
+			randomSleep(2.0, 3.0),
+
+			// Extract full HTML content
+			chromedp.Evaluate(`document.documentElement.outerHTML`, &htmlContent),
 		)
 
 		if err != nil {
-			log.Printf("Błąd: %v", err)
+			log.Printf("Error during registry processing: %v", err)
 			time.Sleep(10 * time.Second)
 			continue
 		}
 
-		if strings.Contains(htmlContent, kw.OczekiwaneID) {
-			fmt.Printf("-> WYNIK: Działka %s JEST w księdze.\n", kw.OczekiwaneID)
-		} else {
-			fmt.Printf("-> WYNIK: Brak działki %s.\n", kw.OczekiwaneID)
+		// Save HTML to file
+		filename := fmt.Sprintf("output/%s_%s_%s.html", kw.KodSadu, kw.Numer, kw.CyfraKontrolna)
+
+		if err := os.MkdirAll("output", 0755); err != nil {
+			log.Printf("Failed to create output directory: %v", err)
+			continue
 		}
 
-		// PRZERWA MIĘDZY KSIĘGAMI
-		if i < len(mojeKsiegi)-1 {
-			wait := 35 + rand.Intn(25)
-			fmt.Printf("Czekam %d sekund przed następną księgą...\n", wait)
-			time.Sleep(time.Duration(wait) * time.Second)
+		if err := os.WriteFile(filename, []byte(htmlContent), 0644); err != nil {
+			log.Printf("Failed to write file %s: %v", filename, err)
+		} else {
+			fmt.Printf("Saved: %s\n", filename)
 		}
+
+		// Rate limiting: random delay between requests
+		wait := 1 + rand.Intn(3)
+		time.Sleep(time.Duration(wait) * time.Second)
 	}
-	fmt.Println("Koniec.")
+	fmt.Println("Done.")
 }
